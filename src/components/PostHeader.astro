@@ -9,16 +9,16 @@ interface Props {
 const { meta, linkTitle = false } = Astro.props;
 
 const notionColors: Record<string, { bg: string; text: string }> = {
-  default: { bg: "#e3e2e0", text: "#55534e" },
-  gray:    { bg: "#e3e2e0", text: "#55534e" },
-  brown:   { bg: "#eee0da", text: "#65443c" },
-  orange:  { bg: "#fad9a1", text: "#6e4e2a" },
-  yellow:  { bg: "#fdecc8", text: "#705e35" },
-  green:   { bg: "#dbeddb", text: "#1d6446" },
-  blue:    { bg: "#d3e5ef", text: "#0f4c81" },
-  purple:  { bg: "#e8deee", text: "#5c3a7e" },
-  pink:    { bg: "#f5e0e9", text: "#862e5e" },
-  red:     { bg: "#ffe2dd", text: "#9b2b26" },
+  default: { bg: "#f0efed", text: "#9c9a96" },
+  gray:    { bg: "#f0efed", text: "#9c9a96" },
+  brown:   { bg: "#f7ece6", text: "#a07060" },
+  orange:  { bg: "#fef3e0", text: "#c08040" },
+  yellow:  { bg: "#fef9ea", text: "#b09040" },
+  green:   { bg: "#eaf5ea", text: "#5a9e7a" },
+  blue:    { bg: "#e5f0f8", text: "#5090b8" },
+  purple:  { bg: "#f0eaf8", text: "#8060a8" },
+  pink:    { bg: "#fceaf3", text: "#c06090" },
+  red:     { bg: "#fff0ee", text: "#c06060" },
 };
 
 function tagStyle(color: string): string {
@@ -110,7 +110,8 @@ const publishedDate = formatDate(meta.firstPublishedAt);
     border: 1px solid var(--tag-text);
   }
   .post-tag:hover {
-    background: var(--tag-bg);
+    background: var(--tag-text);
+    color: #fff;
     text-decoration: none;
   }
 
