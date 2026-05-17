@@ -19,7 +19,36 @@ export async function getStaticPaths({ paginate }: GetStaticPathsOptions) {
   return paginate(posts, { pageSize: 10 });
 }
 
+type PaginationItem = number | "ellipsis";
+
+function buildPaginationItems(current: number, last: number): PaginationItem[] {
+  if (last <= 7) {
+    return Array.from({ length: last }, (_, i) => i + 1);
+  }
+
+  const windowStart = Math.max(2, current - 1);
+  const windowEnd = Math.min(last - 1, current + 1);
+
+  const items: PaginationItem[] = [1];
+
+  if (windowStart > 2) {
+    items.push(windowStart === 3 ? 2 : "ellipsis");
+  }
+
+  for (let i = windowStart; i <= windowEnd; i++) {
+    items.push(i);
+  }
+
+  if (windowEnd < last - 1) {
+    items.push(windowEnd === last - 2 ? last - 1 : "ellipsis");
+  }
+
+  items.push(last);
+  return items;
+}
+
 const { page } = Astro.props;
+const paginationItems = buildPaginationItems(page.currentPage, page.lastPage);
 ---
 
 <Base title={page.currentPage === 1 ? "" : `Page ${page.currentPage}`}>
@@ -54,20 +83,34 @@ const { page } = Astro.props;
 
   {
     page.lastPage > 1 && (
-      <nav aria-label="ページナビゲーション" class="mt-4">
-        <ul class="pagination justify-content-center">
-          <li class:list={["page-item", { disabled: !page.url.prev }]}>
-            <a class="page-link" href={page.url.prev ?? "#"}>&laquo; 前へ</a>
+      <nav aria-label="ページナビゲーション" class="pagination-nav">
+        <ul class="pagination-list">
+          <li class="pagination-item">
+            {page.url.prev ? (
+              <a class="pagination-link" href={page.url.prev} rel="prev">&laquo; Newer</a>
+            ) : (
+              <span class="pagination-link pagination-link--disabled" aria-disabled="true">&laquo; Newer</span>
+            )}
           </li>
 
-          {Array.from({ length: page.lastPage }, (_, i) => i + 1).map((num) => (
-            <li class:list={["page-item", { active: num === page.currentPage }]}>
-              <a class="page-link" href={num === 1 ? "/" : `/${num}`}>{num}</a>
+          {paginationItems.map((item) => (
+            <li class="pagination-item">
+              {item === "ellipsis" ? (
+                <span class="pagination-ellipsis" aria-hidden="true">…</span>
+              ) : item === page.currentPage ? (
+                <span class="pagination-link pagination-link--current" aria-current="page">{item}</span>
+              ) : (
+                <a class="pagination-link" href={item === 1 ? "/" : `/${item}`}>{item}</a>
+              )}
             </li>
           ))}
 
-          <li class:list={["page-item", { disabled: !page.url.next }]}>
-            <a class="page-link" href={page.url.next ?? "#"}>次へ &raquo;</a>
+          <li class="pagination-item">
+            {page.url.next ? (
+              <a class="pagination-link" href={page.url.next} rel="next">Older &raquo;</a>
+            ) : (
+              <span class="pagination-link pagination-link--disabled" aria-disabled="true">Older &raquo;</span>
+            )}
           </li>
         </ul>
       </nav>
@@ -105,5 +148,66 @@ const { page } = Astro.props;
   .post-entry-footer {
     margin-top: 2rem;
     font-size: 0.8rem;
+  }
+
+  .pagination-nav {
+    margin-top: 2.5rem;
+  }
+
+  .pagination-list {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 0.5rem;
+    padding: 0;
+    margin: 0;
+    list-style: none;
+  }
+
+  .pagination-link {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 2.5rem;
+    padding: 0.5rem 0.85rem;
+    border: 1px solid var(--c-border);
+    border-radius: 0.3rem;
+    color: var(--c-accent);
+    font-size: 0.9rem;
+    line-height: 1;
+    text-decoration: none;
+  }
+
+  .pagination-link:not(.pagination-link--disabled):not(.pagination-link--current):hover {
+    border-color: var(--c-accent);
+    background-color: var(--c-accent-soft);
+    text-decoration: none;
+  }
+
+  .pagination-link--current {
+    border-color: var(--c-accent);
+    background-color: var(--c-accent-soft);
+    color: var(--c-accent);
+    font-weight: 600;
+    cursor: default;
+  }
+
+  .pagination-link--disabled {
+    color: var(--c-text-sub);
+    border-color: var(--c-border);
+    background-color: transparent;
+    cursor: default;
+    opacity: 0.5;
+  }
+
+  .pagination-ellipsis {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 2.5rem;
+    padding: 0.5rem 0.5rem;
+    color: var(--c-text-sub);
+    font-size: 0.9rem;
+    line-height: 1;
   }
 </style>
