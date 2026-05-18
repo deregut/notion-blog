@@ -23,6 +23,7 @@
 
 body {
   font-family: var(--f-body);
+  overflow-wrap: anywhere;
 }
 
 a {

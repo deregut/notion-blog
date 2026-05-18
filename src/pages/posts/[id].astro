@@ -2,17 +2,23 @@
 import Base from "@/layouts/Base.astro";
 import NotionRenderer from "@/components/NotionRenderer.vue";
 import PostHeader from "@/components/PostHeader.astro";
+import PostNavigation from "@/components/PostNavigation.astro";
 import { getPublishedPosts, getPageById, extractTextFromBlocks } from "@/lib/notion";
 import { enrichBlocksWithOgp } from "@/lib/enrichBlocks";
 
 export async function getStaticPaths() {
   const posts = await getPublishedPosts();
-  return posts.map((post) => ({
+  return posts.map((post, index) => ({
     params: { id: post.id },
+    props: {
+      prev: posts[index + 1] ?? null, // 古い方
+      next: posts[index - 1] ?? null, // 新しい方
+    },
   }));
 }
 
 const { id } = Astro.params;
+const { prev, next } = Astro.props;
 const data = await getPageById(id!);
 
 if (!data) {
@@ -32,6 +38,8 @@ const title = meta.title || description;
 
     <NotionRenderer blocks={blocks} client:load />
   </article>
+
+  <PostNavigation prev={prev ?? undefined} next={next ?? undefined} />
 </Base>
 
 <style>

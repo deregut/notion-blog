@@ -44,19 +44,24 @@ function toggle() {
   letter-spacing: -0.01em;
 }
 .nr-h1 {
-  font-size: 1.8rem;
+  font-size: calc(1.3rem + 0.6vw);
   margin-top: 2.5rem;
   margin-bottom: 0.5rem;
 }
 .nr-h2 {
-  font-size: 1.5rem;
+  font-size: calc(1.275rem + 0.3vw);
   margin-top: 1.5rem;
   margin-bottom: 0.25rem;
 }
 .nr-h3 {
-  font-size: 1.2rem;
+  font-size: calc(1.2rem + 0.15vw);
   margin-top: 1.5rem;
   margin-bottom: 0.25rem;
+}
+@media (min-width: 1200px) {
+  .nr-h1 { font-size: 1.75rem; }
+  .nr-h2 { font-size: 1.5rem; }
+  .nr-h3 { font-size: 1.25rem; }
 }
 .nr-toggle-btn {
   all: unset;
