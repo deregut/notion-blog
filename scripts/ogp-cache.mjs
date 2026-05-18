@@ -1,9 +1,18 @@
 #!/usr/bin/env node
-// R2 上の単一 tar.gz オブジェクトを使った OGP キャッシュの同期スクリプト。
-// `hydrate`: R2 → public/ogp/ に展開
-// `upload`:  public/ogp/.dirty があれば public/ogp/ を tar.gz 化して R2 に PUT
+// S3 互換ストレージ (Cloudflare R2 / AWS S3 / MinIO 等) 上の単一 tar.gz オブジェクトを
+// 使って public/ogp/ をビルド間で永続化する。
 //
-// 4 種の R2 env が揃っていない場合は何もせず終了する (ローカル開発ではこれが正常パス)。
+// `hydrate`: ストレージ → public/ogp/ に展開
+// `upload`:  public/ogp/.dirty があれば public/ogp/ を tar.gz 化して PUT
+//
+// 必要な環境変数 (4 種すべて揃ったときのみ有効。揃わなければ no-op で exit 0):
+//   S3_ENDPOINT           例) https://<account_id>.r2.cloudflarestorage.com
+//   S3_ACCESS_KEY_ID
+//   S3_SECRET_ACCESS_KEY
+//   S3_BUCKET
+// 任意:
+//   S3_REGION             既定 "auto" (R2 はこの値で OK / AWS なら us-east-1 等)
+//   S3_OGP_CACHE_KEY      既定 "ogp-cache.tar.gz"
 
 import { access, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { basename } from "node:path";
@@ -12,7 +21,7 @@ import * as tar from "tar";
 
 const OGP_DIR = "public/ogp";
 const DIRTY_MARKER = "public/ogp/.dirty";
-const R2_KEY = "ogp-cache.tar.gz";
+const DEFAULT_CACHE_KEY = "ogp-cache.tar.gz";
 const HYDRATE_TMP = "public/ogp/.hydrate.tar.gz";
 const UPLOAD_TMP = ".ogp-cache-upload.tar.gz";
 
@@ -37,16 +46,25 @@ async function loadDotEnv() {
   }
 }
 
-function getR2Config() {
-  const { R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, R2_BUCKET } = process.env;
-  if (!R2_ACCOUNT_ID || !R2_ACCESS_KEY_ID || !R2_SECRET_ACCESS_KEY || !R2_BUCKET) {
+function getS3Config() {
+  const {
+    S3_ENDPOINT,
+    S3_ACCESS_KEY_ID,
+    S3_SECRET_ACCESS_KEY,
+    S3_BUCKET,
+    S3_REGION,
+    S3_OGP_CACHE_KEY,
+  } = process.env;
+  if (!S3_ENDPOINT || !S3_ACCESS_KEY_ID || !S3_SECRET_ACCESS_KEY || !S3_BUCKET) {
     return null;
   }
   return {
-    accountId: R2_ACCOUNT_ID,
-    accessKeyId: R2_ACCESS_KEY_ID,
-    secretAccessKey: R2_SECRET_ACCESS_KEY,
-    bucket: R2_BUCKET,
+    endpoint: S3_ENDPOINT.replace(/\/+$/, ""),
+    accessKeyId: S3_ACCESS_KEY_ID,
+    secretAccessKey: S3_SECRET_ACCESS_KEY,
+    bucket: S3_BUCKET,
+    region: S3_REGION || "auto",
+    cacheKey: S3_OGP_CACHE_KEY || DEFAULT_CACHE_KEY,
   };
 }
 
@@ -54,11 +72,11 @@ function makeClient(cfg) {
   const client = new AwsClient({
     accessKeyId: cfg.accessKeyId,
     secretAccessKey: cfg.secretAccessKey,
-    region: "auto",
+    region: cfg.region,
     service: "s3",
   });
-  const baseUrl = `https://${cfg.accountId}.r2.cloudflarestorage.com/${cfg.bucket}`;
-  return { client, baseUrl };
+  const objectUrl = `${cfg.endpoint}/${cfg.bucket}/${cfg.cacheKey}`;
+  return { client, objectUrl };
 }
 
 async function exists(path) {
@@ -71,27 +89,27 @@ async function exists(path) {
 }
 
 async function hydrate() {
-  const cfg = getR2Config();
+  const cfg = getS3Config();
   if (!cfg) {
-    console.log("[r2-cache] hydrate skipped (R2 env not configured)");
+    console.log("[ogp-cache] hydrate skipped (S3 env not configured)");
     return;
   }
-  const { client, baseUrl } = makeClient(cfg);
+  const { client, objectUrl } = makeClient(cfg);
 
   let res;
   try {
-    res = await client.fetch(`${baseUrl}/${R2_KEY}`);
+    res = await client.fetch(objectUrl);
   } catch (err) {
-    console.warn(`[r2-cache] hydrate failed: ${err?.message ?? err}`);
+    console.warn(`[ogp-cache] hydrate failed: ${err?.message ?? err}`);
     return;
   }
 
   if (res.status === 404) {
-    console.log("[r2-cache] hydrate: no cache on R2 yet (404)");
+    console.log("[ogp-cache] hydrate: no cache on remote yet (404)");
     return;
   }
   if (!res.ok) {
-    console.warn(`[r2-cache] hydrate failed: HTTP ${res.status}`);
+    console.warn(`[ogp-cache] hydrate failed: HTTP ${res.status}`);
     return;
   }
 
@@ -103,23 +121,23 @@ async function hydrate() {
   } finally {
     await rm(HYDRATE_TMP, { force: true });
   }
-  console.log(`[r2-cache] hydrated ${buf.length} bytes (gz)`);
+  console.log(`[ogp-cache] hydrated ${buf.length} bytes (gz)`);
 }
 
 async function upload() {
-  const cfg = getR2Config();
+  const cfg = getS3Config();
   if (!cfg) {
-    console.log("[r2-cache] upload skipped (R2 env not configured)");
+    console.log("[ogp-cache] upload skipped (S3 env not configured)");
     return;
   }
 
   if (!(await exists(DIRTY_MARKER))) {
-    console.log("[r2-cache] upload skipped (no new entries since last build)");
+    console.log("[ogp-cache] upload skipped (no new entries since last build)");
     return;
   }
 
   if (!(await exists(OGP_DIR))) {
-    console.log("[r2-cache] upload skipped (public/ogp does not exist)");
+    console.log("[ogp-cache] upload skipped (public/ogp does not exist)");
     return;
   }
 
@@ -136,24 +154,24 @@ async function upload() {
   const gz = await readFile(UPLOAD_TMP);
   await rm(UPLOAD_TMP, { force: true });
 
-  const { client, baseUrl } = makeClient(cfg);
+  const { client, objectUrl } = makeClient(cfg);
   let res;
   try {
-    res = await client.fetch(`${baseUrl}/${R2_KEY}`, {
+    res = await client.fetch(objectUrl, {
       method: "PUT",
       body: gz,
       headers: { "Content-Type": "application/gzip" },
     });
   } catch (err) {
-    console.warn(`[r2-cache] upload failed: ${err?.message ?? err}`);
+    console.warn(`[ogp-cache] upload failed: ${err?.message ?? err}`);
     return;
   }
 
   if (!res.ok) {
-    console.warn(`[r2-cache] upload failed: HTTP ${res.status}`);
+    console.warn(`[ogp-cache] upload failed: HTTP ${res.status}`);
     return;
   }
-  console.log(`[r2-cache] uploaded ${gz.length} bytes (gz)`);
+  console.log(`[ogp-cache] uploaded ${gz.length} bytes (gz)`);
   await rm(DIRTY_MARKER, { force: true });
 }
 
@@ -164,6 +182,6 @@ if (cmd === "hydrate") {
 } else if (cmd === "upload") {
   await upload();
 } else {
-  console.error("Usage: node scripts/r2-cache.mjs hydrate|upload");
+  console.error("Usage: node scripts/ogp-cache.mjs hydrate|upload");
   process.exit(1);
 }
