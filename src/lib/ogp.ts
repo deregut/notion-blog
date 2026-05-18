@@ -27,6 +27,8 @@ export interface OgpMeta {
 const OGP_IMAGE_DIR = "public/ogp";
 const OGP_DIST_DIR = "dist/ogp";
 const OGP_IMAGE_PUBLIC_PATH = "/ogp";
+export const OGP_META_DIR = "public/ogp/meta";
+export const OGP_DIRTY_MARKER = "public/ogp/.dirty";
 const NOTION_IMAGE_DIR = "public/notion-images";
 const NOTION_IMAGE_DIST_DIR = "dist/notion-images";
 const NOTION_IMAGE_PUBLIC_PATH = "/notion-images";
@@ -146,6 +148,8 @@ interface DownloadImageOptions {
   publicPath: string;
   filename: string;
   transform: (input: sharp.Sharp) => sharp.Sharp;
+  /** 新規ダウンロード時に OGP キャッシュの .dirty マーカーを更新する */
+  markOgpDirty?: boolean;
 }
 
 /** dist/ へのコピーはベストエフォート (dev 時は不要、build 時のみ有効) */
@@ -155,6 +159,16 @@ async function copyToDist(distDir: string, distPath: string, data: Buffer): Prom
     await writeFile(distPath, data);
   } catch {
     // dist 書き込み失敗は無視 (dev モード等)
+  }
+}
+
+/** OGP キャッシュに新規エントリが書かれたことを示すマーカーを更新する */
+export async function touchOgpDirtyMarker(): Promise<void> {
+  try {
+    await mkdir(OGP_IMAGE_DIR, { recursive: true });
+    await writeFile(OGP_DIRTY_MARKER, "");
+  } catch {
+    // マーカー書き込みの失敗は致命的でないので無視
   }
 }
 
@@ -202,6 +216,7 @@ async function downloadAndSaveImage(
 
   await writeFile(localPath, output);
   await copyToDist(opts.distDir, distPath, output);
+  if (opts.markOgpDirty) await touchOgpDirtyMarker();
   return publicUrl;
 }
 
@@ -210,7 +225,7 @@ async function downloadAndSaveImage(
  * Notion の S3 署名付き URL はリクエストごとにクエリパラメータ
  * (X-Amz-Signature 等) が変わるため、パス部分のみをハッシュする。
  */
-function hashUrl(url: string): string {
+export function hashUrl(url: string): string {
   try {
     const u = new URL(url);
     // origin + pathname のみ (クエリ・フラグメント除外)
@@ -240,6 +255,7 @@ export async function downloadOgpImage(
       transform: (s) =>
         s.resize(1200, 630, { fit: "inside", withoutEnlargement: true })
           .webp({ quality: 80 }),
+      markOgpDirty: true,
     });
   } catch {
     return null;
@@ -264,6 +280,7 @@ export async function downloadFavicon(
       transform: (s) =>
         s.resize(32, 32, { fit: "cover" })
           .png(),
+      markOgpDirty: true,
     });
   } catch {
     return null;

@@ -1,5 +1,6 @@
 import type { Block } from "./notion";
 import { fetchOgpMeta, downloadOgpImage, downloadFavicon, downloadNotionImage } from "./ogp";
+import { readMetaCache, writeMetaCache } from "./ogpMetaCache";
 
 const CONCURRENCY_LIMIT = 5;
 
@@ -19,6 +20,12 @@ export async function enrichBlocksWithOgp(blocks: Block[]): Promise<Block[]> {
 
   await processWithConcurrency(tasks, CONCURRENCY_LIMIT, async (task) => {
     if (task.type === "ogp") {
+      const cached = await readMetaCache(task.url);
+      if (cached) {
+        task.block.ogp = cached;
+        return;
+      }
+
       const meta = await fetchOgpMeta(task.url);
       if (!meta) return;
 
@@ -29,6 +36,7 @@ export async function enrichBlocksWithOgp(blocks: Block[]): Promise<Block[]> {
         meta.faviconUrl = await downloadFavicon(meta.faviconUrl);
       }
 
+      await writeMetaCache(meta);
       task.block.ogp = meta;
     } else {
       const localPath = await downloadNotionImage(task.url);
