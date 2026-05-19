@@ -3,7 +3,7 @@ import Base from "@/layouts/Base.astro";
 import NotionRenderer from "@/components/NotionRenderer.vue";
 import PostHeader from "@/components/PostHeader.astro";
 import PostNavigation from "@/components/PostNavigation.astro";
-import { getPublishedPosts, getPageById, extractTextFromBlocks } from "@/lib/notion";
+import { getPublishedPosts, getPageById, extractTextFromBlocks, extractFirstImageUrl } from "@/lib/notion";
 import { enrichBlocksWithOgp } from "@/lib/enrichBlocks";
 
 export async function getStaticPaths() {
@@ -30,9 +30,10 @@ await enrichBlocksWithOgp(blocks);
 
 const description = extractTextFromBlocks(blocks);
 const title = meta.title || description;
+const ogImage = extractFirstImageUrl(blocks);
 ---
 
-<Base title={title} description={description} ogType="article" oEmbedUrl={`/oembed/${id}.json`}>
+<Base title={title} description={description} ogType="article" ogImage={ogImage ?? undefined} oEmbedUrl={`/oembed/${id}.json`}>
   <article itemscope itemtype="https://schema.org/BlogPosting">
     <PostHeader meta={meta} />
 
