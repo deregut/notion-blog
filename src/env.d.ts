@@ -3,6 +3,7 @@
 interface ImportMetaEnv {
   readonly NOTION_TOKEN: string;
   readonly NOTION_DATABASE_ID: string;
+  readonly PAGE_SIZE?: string;
 }
 
 interface ImportMeta {

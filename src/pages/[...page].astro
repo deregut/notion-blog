@@ -1,5 +1,4 @@
 ---
-import type { GetStaticPathsOptions } from "astro";
 import Base from "@/layouts/Base.astro";
 import NotionRenderer from "@/components/NotionRenderer.vue";
 import PostHeader from "@/components/PostHeader.astro";
@@ -9,14 +8,33 @@ import {
 } from "@/lib/notion";
 import { enrichBlocksWithOgp } from "@/lib/enrichBlocks";
 
-export async function getStaticPaths({ paginate }: GetStaticPathsOptions) {
+export async function getStaticPaths() {
+  const pageSize = Number(import.meta.env.PAGE_SIZE) || 10;
   const posts = await getPublishedPostsWithBlocks();
 
   for (const post of posts) {
     await enrichBlocksWithOgp(post.blocks);
   }
 
-  return paginate(posts, { pageSize: 10 });
+  const totalPages = Math.max(1, Math.ceil(posts.length / pageSize));
+
+  return Array.from({ length: totalPages }, (_, i) => {
+    const pageNum = i + 1;
+    return {
+      params: { page: pageNum === 1 ? undefined : `pages/${pageNum}` },
+      props: {
+        page: {
+          data: posts.slice(i * pageSize, (i + 1) * pageSize),
+          currentPage: pageNum,
+          lastPage: totalPages,
+          url: {
+            prev: pageNum === 1 ? undefined : pageNum === 2 ? "/" : `/pages/${pageNum - 1}/`,
+            next: pageNum === totalPages ? undefined : `/pages/${pageNum + 1}/`,
+          },
+        },
+      },
+    };
+  });
 }
 
 type PaginationItem = number | "ellipsis";
@@ -100,7 +118,7 @@ const paginationItems = buildPaginationItems(page.currentPage, page.lastPage);
               ) : item === page.currentPage ? (
                 <span class="pagination-link pagination-link--current" aria-current="page">{item}</span>
               ) : (
-                <a class="pagination-link" href={item === 1 ? "/" : `/${item}`}>{item}</a>
+                <a class="pagination-link" href={item === 1 ? "/" : `/pages/${item}/`}>{item}</a>
               )}
             </li>
           ))}
