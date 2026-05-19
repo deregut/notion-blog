@@ -12,7 +12,7 @@ interface Props {
   robots?: string;
 }
 
-const { title, description = siteName, oEmbedUrl, robots } = Astro.props;
+const { title, description = siteName, ogType = "website", oEmbedUrl, robots } = Astro.props;
 const canonicalUrl = new URL(Astro.url.pathname, Astro.site).href;
 const ogTitle = title || siteName;
 ---
@@ -23,6 +23,11 @@ const ogTitle = title || siteName;
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="description" content={description} />
+    <meta property="og:title" content={ogTitle} />
+    <meta property="og:description" content={description} />
+    <meta property="og:type" content={ogType} />
+    <meta property="og:url" content={canonicalUrl} />
+    <meta property="og:site_name" content={siteName} />
     <title>{title ? `${title} | ${siteName}` : siteName}</title>
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <link rel="canonical" href={canonicalUrl} />
