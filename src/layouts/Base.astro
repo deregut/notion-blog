@@ -8,13 +8,15 @@ interface Props {
   title: string;
   description?: string;
   ogType?: string;
+  ogImage?: string;
   oEmbedUrl?: string;
   robots?: string;
 }
 
-const { title, description = siteName, ogType = "website", oEmbedUrl, robots } = Astro.props;
+const { title, description = siteName, ogType = "website", ogImage, oEmbedUrl, robots } = Astro.props;
 const canonicalUrl = new URL(Astro.url.pathname, Astro.site).href;
 const ogTitle = title || siteName;
+const ogImageUrl = ogImage ? new URL(ogImage, Astro.site).href : undefined;
 ---
 
 <!doctype html>
@@ -28,6 +30,11 @@ const ogTitle = title || siteName;
     <meta property="og:type" content={ogType} />
     <meta property="og:url" content={canonicalUrl} />
     <meta property="og:site_name" content={siteName} />
+    {ogImageUrl && <meta property="og:image" content={ogImageUrl} />}
+    <meta name="twitter:card" content="summary" />
+    <meta name="twitter:title" content={ogTitle} />
+    <meta name="twitter:description" content={description} />
+    {ogImageUrl && <meta name="twitter:image" content={ogImageUrl} />}
     <title>{title ? `${title} | ${siteName}` : siteName}</title>
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <link rel="canonical" href={canonicalUrl} />

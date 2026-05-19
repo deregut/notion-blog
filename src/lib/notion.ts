@@ -211,6 +211,22 @@ export function extractTextFromBlocks(blocks: Block[], maxLength = 200): string 
     : joined;
 }
 
+export function extractFirstImageUrl(blocks: Block[]): string | null {
+  for (const block of blocks) {
+    if (block.type === "image") {
+      if (block.localImageUrl) return block.localImageUrl;
+      const data = (block as Record<string, any>).image;
+      if (data?.type === "external") return data.external?.url ?? null;
+      if (data?.type === "file") return data.file?.url ?? null;
+    }
+    if (block.children) {
+      const found = extractFirstImageUrl(block.children);
+      if (found) return found;
+    }
+  }
+  return null;
+}
+
 function extractTitle(prop: unknown): string {
   if (!prop || typeof prop !== "object") return "";
   const p = prop as Record<string, unknown>;
