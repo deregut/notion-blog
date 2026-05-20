@@ -2,7 +2,7 @@ import type { APIRoute, GetStaticPaths } from "astro";
 import {
   getPublishedPosts,
   getPageById,
-  extractTextFromBlocks,
+  resolveDisplayTitle,
 } from "@/lib/notion";
 import { siteName, author } from "@/site";
 
@@ -22,8 +22,7 @@ export const GET: APIRoute = async ({ params, site }) => {
   }
 
   const { meta, blocks } = data;
-  const description = extractTextFromBlocks(blocks);
-  const title = meta.title || description;
+  const title = resolveDisplayTitle(meta, blocks);
   const pageUrl = new URL(`/posts/${meta.id}`, site).href;
   const providerUrl = new URL("/", site).href;
 

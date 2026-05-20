@@ -6,9 +6,11 @@ import type { Block } from "@/lib/notion";
 const props = defineProps<{ block: Block }>();
 
 const url: string =
+  props.block._internalUrl ??
   (props.block as any).bookmark?.url ??
   (props.block as any).link_preview?.url ??
   "";
+const isInternal = !!props.block._internalUrl;
 const ogp = props.block.ogp ?? null;
 </script>
 
@@ -16,8 +18,8 @@ const ogp = props.block.ogp ?? null;
   <a
     :href="url"
     class="card nr-bookmark text-decoration-none my-3"
-    target="_blank"
-    rel="noopener noreferrer"
+    :target="isInternal ? undefined : '_blank'"
+    :rel="isInternal ? undefined : 'noopener noreferrer'"
   >
     <div class="row g-0 nr-bookmark-row" :class="ogp?.imageUrl ? 'flex-column-reverse flex-sm-row' : ''">
       <div :class="ogp?.imageUrl ? 'col-12 col-sm-8' : 'col'">
@@ -42,7 +44,7 @@ const ogp = props.block.ogp ?? null;
             <span v-if="ogp?.siteName" class="text-body-secondary fw-medium nr-bookmark-site-name">
               {{ ogp.siteName }}
             </span>
-            <span class="text-body-secondary text-truncate">{{ url }}</span>
+            <span class="text-body-secondary text-truncate">{{ ogp?.url ?? url }}</span>
           </div>
         </div>
       </div>

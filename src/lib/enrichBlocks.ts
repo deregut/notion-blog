@@ -1,4 +1,6 @@
-import type { Block } from "./notion";
+import { getBlocks, getPageById, extractFirstImageUrl, extractTextFromBlocks, resolveDisplayTitle, TITLE_MAX_LENGTH } from "./notion";
+import type { Block, PostMeta, RichText } from "./notion";
+import { SITE_NAME } from "astro:env/server";
 import { fetchOgpMeta, downloadOgpImage, downloadFavicon, downloadNotionImage } from "./ogp";
 import { readMetaCache, writeMetaCache } from "./ogpMetaCache";
 
@@ -75,6 +77,186 @@ function collectTasks(blocks: Block[], tasks: EnrichTask[]): void {
     }
   }
 }
+
+// ---------------------------------------------------------------------------
+// 内部リンク解決
+// ---------------------------------------------------------------------------
+
+function normalizeId(id: string): string {
+  return id.replace(/-/g, "");
+}
+
+function getRichTextsFromBlock(block: Block): RichText[][] {
+  if (block.type === "table_row") {
+    const cells = (block as any).table_row?.cells;
+    return Array.isArray(cells) ? cells : [];
+  }
+  const data = (block as any)[block.type];
+  const rt = data?.rich_text;
+  return rt ? [rt] : [];
+}
+
+export async function resolveInternalLinks(blocks: Block[], publishedPosts: PostMeta[]): Promise<void> {
+  const postMap = new Map(publishedPosts.map((p) => [normalizeId(p.id), p]));
+  const siteUrl = (import.meta.env.SITE ?? "").replace(/\/$/, "");
+  await resolveRecursive(blocks, postMap, siteUrl);
+}
+
+async function resolveRecursive(blocks: Block[], postMap: Map<string, PostMeta>, siteUrl: string): Promise<void> {
+  for (const block of blocks) {
+    if (block.type === "link_to_page") {
+      const data = (block as any).link_to_page;
+      if (data?.type === "page_id") {
+        const post = postMap.get(normalizeId(data.page_id));
+        if (post) {
+          const internalPath = `/posts/${post.id}`;
+          block._internalUrl = internalPath;
+
+          let imageUrl: string | null = null;
+          let description: string | null = null;
+          let displayTitle = post.title;
+          try {
+            const linked = await getPageById(post.id);
+            const linkedBlocks = linked?.blocks ?? await getBlocks(post.id);
+            displayTitle = resolveDisplayTitle(post, linkedBlocks);
+            description = extractTextFromBlocks(linkedBlocks) || null;
+            const firstImage = extractFirstImageUrl(linkedBlocks);
+            if (firstImage) {
+              imageUrl = firstImage.startsWith("/")
+                ? firstImage
+                : await downloadNotionImage(firstImage);
+            }
+          } catch { /* ignore */ }
+
+          block.ogp = {
+            title: displayTitle,
+            description,
+            siteName: SITE_NAME,
+            imageUrl,
+            faviconUrl: "/favicon.svg",
+            url: `${siteUrl}${internalPath}`,
+          };
+        }
+      }
+    }
+
+    for (const richTexts of getRichTextsFromBlock(block)) {
+      for (const item of richTexts) {
+        if (item.type === "mention") {
+          const mention = (item as any).mention;
+          if (mention?.type === "page") {
+            const post = postMap.get(normalizeId(mention.page.id));
+            if (post) {
+              (item as any).href = `/posts/${post.id}`;
+              (item as any)._icon = post.icon;
+              continue;
+            }
+          }
+          if (item.href && !item.href.startsWith("/")) {
+            try {
+              let meta = await readMetaCache(item.href);
+              if (!meta) {
+                meta = await fetchOgpMeta(item.href);
+                if (meta) {
+                  if (meta.faviconUrl) {
+                    meta.faviconUrl = await downloadFavicon(meta.faviconUrl);
+                  }
+                  await writeMetaCache(meta);
+                }
+              }
+              if (meta?.title) {
+                (item as any).plain_text = meta.title.length > TITLE_MAX_LENGTH
+                  ? meta.title.slice(0, TITLE_MAX_LENGTH) + "…"
+                  : meta.title;
+              }
+              if (meta?.faviconUrl) {
+                (item as any)._faviconUrl = meta.faviconUrl;
+              }
+            } catch { /* ignore */ }
+          }
+        }
+      }
+    }
+
+    if (block.children) {
+      await resolveRecursive(block.children, postMap, siteUrl);
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// バックリンク収集
+// ---------------------------------------------------------------------------
+
+export interface BacklinkEntry {
+  id: string;
+  title: string;
+  icon: string | null;
+  firstPublishedAt: string;
+}
+
+export function collectBacklinks(
+  posts: { meta: PostMeta; blocks: Block[] }[],
+): Map<string, BacklinkEntry[]> {
+  const postMap = new Map(posts.map((p) => [normalizeId(p.meta.id), p]));
+  const backlinks = new Map<string, BacklinkEntry[]>();
+
+  for (const post of posts) {
+    const linkedIds = new Set<string>();
+    collectLinkedPageIds(post.blocks, linkedIds);
+
+    const entry: BacklinkEntry = {
+      id: post.meta.id,
+      title: resolveDisplayTitle(post.meta, post.blocks),
+      icon: post.meta.icon,
+      firstPublishedAt: post.meta.firstPublishedAt,
+    };
+
+    for (const rawId of linkedIds) {
+      const targetId = normalizeId(rawId);
+      if (targetId === normalizeId(post.meta.id)) continue;
+      if (!postMap.has(targetId)) continue;
+
+      const canonicalId = postMap.get(targetId)!.meta.id;
+      if (!backlinks.has(canonicalId)) {
+        backlinks.set(canonicalId, []);
+      }
+      backlinks.get(canonicalId)!.push(entry);
+    }
+  }
+
+  return backlinks;
+}
+
+function collectLinkedPageIds(blocks: Block[], ids: Set<string>): void {
+  for (const block of blocks) {
+    if (block.type === "link_to_page") {
+      const data = (block as any).link_to_page;
+      if (data?.type === "page_id") {
+        ids.add(data.page_id);
+      }
+    }
+
+    for (const richTexts of getRichTextsFromBlock(block)) {
+      for (const item of richTexts) {
+        if (item.type === "mention") {
+          const mention = (item as any).mention;
+          if (mention?.type === "page") {
+            ids.add(mention.page.id);
+          }
+        }
+      }
+    }
+
+    if (block.children) {
+      collectLinkedPageIds(block.children, ids);
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Concurrency helper
+// ---------------------------------------------------------------------------
 
 async function processWithConcurrency<T>(
   items: T[],

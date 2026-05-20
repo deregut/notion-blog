@@ -23,8 +23,26 @@ function splitByNewline(text: string): string[] {
 
 <template>
   <template v-for="(t, i) in texts" :key="i">
-    <!-- mention -->
-    <template v-if="t.type === 'mention'">
+    <!-- mention (with link) -->
+    <template v-if="t.type === 'mention' && t.href">
+      <a
+        :href="t.href"
+        class="nr-mention nr-mention-link"
+        :class="i === 0 ? 'nr-mention-first' : undefined"
+        :target="t.href.startsWith('/') ? undefined : '_blank'"
+        :rel="t.href.startsWith('/') ? undefined : 'noopener noreferrer'"
+      >
+        <span v-if="(t as any)._icon" class="nr-mention-icon">{{ (t as any)._icon }}</span>
+        <img v-else-if="(t as any)._faviconUrl" :src="(t as any)._faviconUrl" class="nr-mention-favicon" width="18" height="18" />
+        <i v-else :class="t.href.startsWith('/') ? 'bi bi-file-earmark-text' : 'bi bi-box-arrow-up-right'" class="nr-mention-bi"></i>
+        <template v-for="(line, j) in splitByNewline(t.plain_text)" :key="j">
+          <br v-if="j > 0" />{{ line }}
+        </template>
+      </a>
+    </template>
+
+    <!-- mention (no link) -->
+    <template v-else-if="t.type === 'mention'">
       <span class="nr-mention">
         <template v-for="(line, j) in splitByNewline(t.plain_text)" :key="j">
           <br v-if="j > 0" />{{ line }}
@@ -96,10 +114,41 @@ function splitByNewline(text: string): string[] {
   text-underline-offset: 2px;
 }
 .nr-mention {
-  background: var(--c-accent-soft);
-  padding: 0.125em 0.25em;
-  border-radius: 3px;
-  font-size: 0.9em;
+  padding: 0.1em 0.2em;
+  border-radius: 0.2em;
+}
+.nr-mention-first {
+  margin-left: -0.3em;
+}
+.nr-mention-link {
+  color: var(--c-accent);
+  text-decoration: underline;
+  text-decoration-color: var(--c-text-sub);
+  text-underline-offset: 0.25em;
+}
+.nr-mention-link:hover {
+  color: var(--c-accent);
+  background-color: var(--c-callout-bg);
+  text-decoration: none;
+}
+.nr-mention-link:active {
+  background-color: var(--c-accent-soft);
+  text-decoration: none;
+}
+.nr-mention-icon {
+  font-size: 1.1em;
+  margin-right: 0.2em;
+  vertical-align: -0.1em;
+}
+.nr-mention-favicon {
+  margin-right: 0.3em;
+  vertical-align: -0.2em;
+}
+.nr-mention-bi {
+  font-size: 1em;
+  margin-right: 0.25em;
+  margin-left: 0.05em;
+  color: var(--bs-body-color);
 }
 .nr-equation {
   font-family: var(--f-code);

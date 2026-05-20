@@ -6,7 +6,7 @@ import {
   getPublishedPostsWithBlocks,
   getBlocksBeforeDivider,
 } from "@/lib/notion";
-import { enrichBlocksWithOgp } from "@/lib/enrichBlocks";
+import { enrichBlocksWithOgp, resolveInternalLinks } from "@/lib/enrichBlocks";
 
 export async function getStaticPaths() {
   const pageSize = Number(import.meta.env.PAGE_SIZE) || 10;
@@ -14,6 +14,11 @@ export async function getStaticPaths() {
 
   for (const post of posts) {
     await enrichBlocksWithOgp(post.blocks);
+  }
+
+  const allMeta = posts.map((p) => p.meta);
+  for (const post of posts) {
+    await resolveInternalLinks(post.blocks, allMeta);
   }
 
   const totalPages = Math.max(1, Math.ceil(posts.length / pageSize));
