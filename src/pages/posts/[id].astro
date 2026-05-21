@@ -3,22 +3,33 @@ import Base from "@/layouts/Base.astro";
 import NotionRenderer from "@/components/NotionRenderer.vue";
 import PostHeader from "@/components/PostHeader.astro";
 import PostNavigation from "@/components/PostNavigation.astro";
-import { getPublishedPosts, getPageById, extractTextFromBlocks, extractFirstImageUrl } from "@/lib/notion";
-import { enrichBlocksWithOgp } from "@/lib/enrichBlocks";
+import { getPublishedPostsWithBlocks, getPageById, extractTextFromBlocks, extractFirstImageUrl, resolveDisplayTitle } from "@/lib/notion";
+import { enrichBlocksWithOgp, resolveInternalLinks, collectBacklinks } from "@/lib/enrichBlocks";
+import type { BacklinkEntry } from "@/lib/enrichBlocks";
+import type { PostMeta } from "@/lib/notion";
 
 export async function getStaticPaths() {
-  const posts = await getPublishedPosts();
+  const postsWithBlocks = await getPublishedPostsWithBlocks();
+  const posts = postsWithBlocks.map((p) => p.meta);
+  const backlinksMap = collectBacklinks(postsWithBlocks);
   return posts.map((post, index) => ({
     params: { id: post.id },
     props: {
       prev: posts[index + 1] ?? null, // 古い方
       next: posts[index - 1] ?? null, // 新しい方
+      allPosts: posts,
+      backlinks: backlinksMap.get(post.id) ?? [],
     },
   }));
 }
 
 const { id } = Astro.params;
-const { prev, next } = Astro.props;
+const { prev, next, allPosts, backlinks } = Astro.props as {
+  prev: PostMeta | null;
+  next: PostMeta | null;
+  allPosts: PostMeta[];
+  backlinks: BacklinkEntry[];
+};
 const data = await getPageById(id!);
 
 if (!data) {
@@ -27,9 +38,16 @@ if (!data) {
 
 const { meta, blocks } = data;
 await enrichBlocksWithOgp(blocks);
+await resolveInternalLinks(blocks, allPosts);
+
+function formatDate(dateStr: string): string {
+  return new Date(dateStr).toLocaleDateString("ja-JP", {
+    year: "numeric", month: "long", day: "numeric",
+  });
+}
 
 const description = extractTextFromBlocks(blocks);
-const title = meta.title || description;
+const title = resolveDisplayTitle(meta, blocks);
 const ogImage = extractFirstImageUrl(blocks);
 ---
 
@@ -39,6 +57,23 @@ const ogImage = extractFirstImageUrl(blocks);
 
     <NotionRenderer blocks={blocks} client:load />
   </article>
+
+  {backlinks.length > 0 && (
+    <aside class="backlinks">
+      <h2 class="backlinks-title">この記事にリンクしている記事</h2>
+      <ul class="backlinks-list">
+        {backlinks.map((post) => (
+          <li>
+            <time class="backlinks-date" datetime={post.firstPublishedAt}>{formatDate(post.firstPublishedAt)}</time>
+            <a href={`/posts/${post.id}/`}>
+              {post.icon && <span class="backlinks-icon">{post.icon}</span>}
+              {post.title}
+            </a>
+          </li>
+        ))}
+      </ul>
+    </aside>
+  )}
 
   <PostNavigation prev={prev ?? undefined} next={next ?? undefined} />
 </Base>
@@ -50,5 +85,41 @@ const ogImage = extractFirstImageUrl(blocks);
     margin-bottom: 1.5rem;
     object-fit: cover;
     max-height: 400px;
+  }
+
+  .backlinks {
+    margin-top: 2.5rem;
+    padding-top: 1.5rem;
+    border-top: 1px solid var(--c-border);
+  }
+  .backlinks-title {
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: var(--c-text-sub);
+    margin-bottom: 0.75rem;
+  }
+  .backlinks-list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+  .backlinks-list a {
+    font-size: 0.9rem;
+    color: var(--c-accent);
+    text-decoration: none;
+  }
+  .backlinks-list a:hover {
+    text-decoration: underline;
+  }
+  .backlinks-date {
+    display: block;
+    font-size: 0.75rem;
+    color: var(--c-text-sub);
+  }
+  .backlinks-icon {
+    margin-right: 0.3em;
   }
 </style>

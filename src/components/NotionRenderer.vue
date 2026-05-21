@@ -84,7 +84,7 @@ function groupBlocks(blocks: Block[]) {
         <BlockImage v-else-if="block.type === 'image'" :block="block" />
         <BlockVideo v-else-if="block.type === 'video'" :block="block" />
         <BlockBookmark
-          v-else-if="block.type === 'bookmark' || block.type === 'link_preview'"
+          v-else-if="block.type === 'bookmark' || block.type === 'link_preview' || block.type === 'link_to_page'"
           :block="block"
         />
         <BlockEmbed v-else-if="block.type === 'embed'" :block="block" />

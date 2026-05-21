@@ -268,7 +268,7 @@ export async function downloadOgpImage(
 }
 
 // ---------------------------------------------------------------------------
-// Favicon ダウンロード (PNG, 32x32)
+// Favicon ダウンロード (WebP, 32x32)
 // SVG も sharp (librsvg) でラスタライズされるため安全
 // ---------------------------------------------------------------------------
 
@@ -281,12 +281,57 @@ export async function downloadFavicon(
       publicDir: OGP_IMAGE_DIR,
       distDir: OGP_DIST_DIR,
       publicPath: OGP_IMAGE_PUBLIC_PATH,
-      filename: `favicon-${hashUrl(faviconUrl)}.png`,
+      filename: `favicon-${hashUrl(faviconUrl)}.webp`,
       transform: (s) =>
         s.resize(32, 32, { fit: "cover" })
-          .png(),
+          .webp({ quality: 80 }),
       markOgpDirty: true,
     });
+  } catch {
+    return null;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// ページURLから favicon URL を解決する
+// ---------------------------------------------------------------------------
+
+export async function fetchFaviconUrl(pageUrl: string): Promise<string | null> {
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+
+    const response = await fetch(pageUrl, {
+      signal: controller.signal,
+      headers: {
+        "User-Agent": "Mozilla/5.0 (compatible; Googlebot/2.1; +https://www.google.com/bot.html)",
+        Accept: "text/html",
+      },
+      redirect: "follow",
+    });
+    clearTimeout(timeoutId);
+
+    const contentType = response.headers.get("content-type") ?? "";
+    if (
+      !contentType.includes("text/html") &&
+      !contentType.includes("application/xhtml")
+    ) {
+      return fallbackFaviconUrl(pageUrl);
+    }
+
+    const html = await response.text();
+    if (html.length > MAX_HTML_SIZE) return fallbackFaviconUrl(pageUrl);
+
+    const $ = cheerio.load(html);
+    return resolveFaviconUrl($, pageUrl);
+  } catch {
+    return fallbackFaviconUrl(pageUrl);
+  }
+}
+
+function fallbackFaviconUrl(pageUrl: string): string | null {
+  try {
+    return `${new URL(pageUrl).origin}/favicon.ico`;
   } catch {
     return null;
   }

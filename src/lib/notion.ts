@@ -22,6 +22,8 @@ export type Block = BlockObjectResponse & {
   ogp?: OgpMeta;
   /** ビルド時にダウンロードされたローカル画像パス */
   localImageUrl?: string;
+  /** 内部リンク先URL（同一DB内のページへのリンク） */
+  _internalUrl?: string;
 };
 export type RichText = RichTextItemResponse;
 export type Page = PageObjectResponse;
@@ -36,6 +38,7 @@ export interface PostMeta {
   title: string;
   firstPublishedAt: string;
   tags: PostTag[];
+  icon: string | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -53,7 +56,14 @@ export interface PostMeta {
  * 注: First published at は未公開ページでは空のことがあるため、
  *     Notion 側でソートせず取得後に firstPublishedAt で降順ソートする。
  */
+let _postsCache: PostMeta[] | null = null;
+let _postsWithBlocksCache: { meta: PostMeta; blocks: Block[] }[] | null = null;
+
+const useCache = import.meta.env.PROD;
+
 export async function getPublishedPosts(): Promise<PostMeta[]> {
+  if (useCache && _postsCache) return _postsCache;
+
   const response = await notion.databases.query({
     database_id: databaseId,
     filter: {
@@ -62,26 +72,29 @@ export async function getPublishedPosts(): Promise<PostMeta[]> {
     },
   });
 
-  return response.results
+  const result = response.results
     .filter((p): p is PageObjectResponse => "properties" in p)
     .map(pageToMeta)
     .sort((a, b) => b.firstPublishedAt.localeCompare(a.firstPublishedAt));
+  if (useCache) _postsCache = result;
+  return result;
 }
 
-/**
- * 公開済み記事をブロック付きで取得する（一覧ページ用）。
- */
 export async function getPublishedPostsWithBlocks(): Promise<
   { meta: PostMeta; blocks: Block[] }[]
 > {
+  if (useCache && _postsWithBlocksCache) return _postsWithBlocksCache;
+
   const posts = await getPublishedPosts();
 
-  return Promise.all(
+  const result = await Promise.all(
     posts.map(async (meta) => {
       const blocks = await getBlocks(meta.id);
       return { meta, blocks };
     })
   );
+  if (useCache) _postsWithBlocksCache = result;
+  return result;
 }
 
 // ---------------------------------------------------------------------------
@@ -98,7 +111,16 @@ function pageToMeta(page: PageObjectResponse): PostMeta {
     title,
     firstPublishedAt,
     tags: extractMultiSelect(props.Tags),
+    icon: extractIcon(page.icon),
   };
+}
+
+function extractIcon(icon: PageObjectResponse["icon"]): string | null {
+  if (!icon) return null;
+  if (icon.type === "emoji") return icon.emoji;
+  if (icon.type === "external") return icon.external.url;
+  if (icon.type === "file") return icon.file.url;
+  return null;
 }
 
 // ---------------------------------------------------------------------------
@@ -151,6 +173,12 @@ export async function getPage(pageId: string): Promise<Page> {
 export async function getPageById(
   pageId: string
 ): Promise<{ meta: PostMeta; blocks: Block[] } | null> {
+  if (useCache && _postsWithBlocksCache) {
+    const cached = _postsWithBlocksCache.find((p) => p.meta.id === pageId);
+    if (cached) return cached;
+    return null;
+  }
+
   const page = await getPage(pageId);
   const props = page.properties;
 
@@ -185,13 +213,17 @@ export function getBlocksBeforeDivider(blocks: Block[]): Block[] {
 }
 
 // ---------------------------------------------------------------------------
-// Property Extractors
+// Text extraction
 // ---------------------------------------------------------------------------
 
-/**
- * ブロック配列からプレーンテキストを抽出し、指定文字数で切り詰める。
- */
-export function extractTextFromBlocks(blocks: Block[], maxLength = 200): string {
+export const TITLE_MAX_LENGTH = 50;
+export const DESCRIPTION_MAX_LENGTH = 200;
+
+export function resolveDisplayTitle(meta: PostMeta, blocks: Block[]): string {
+  return meta.title || extractTextFromBlocks(blocks, TITLE_MAX_LENGTH);
+}
+
+export function extractTextFromBlocks(blocks: Block[], maxLength = DESCRIPTION_MAX_LENGTH): string {
   const textParts: string[] = [];
 
   for (const block of blocks) {
