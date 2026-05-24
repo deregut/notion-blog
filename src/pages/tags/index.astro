@@ -1,0 +1,107 @@
+---
+import Base from "@/layouts/Base.astro";
+import { getPublishedPosts } from "@/lib/notion";
+
+const posts = await getPublishedPosts();
+
+const tagMap = new Map<string, { count: number; color: string }>();
+for (const post of posts) {
+  for (const tag of post.tags) {
+    const entry = tagMap.get(tag.name);
+    if (entry) {
+      entry.count += 1;
+    } else {
+      tagMap.set(tag.name, { count: 1, color: tag.color });
+    }
+  }
+}
+
+const tags = Array.from(tagMap.entries())
+  .map(([name, { count, color }]) => ({ name, count, color }))
+  .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name, "ja"));
+
+const notionColors: Record<string, string> = {
+  default: "#9c9a96",
+  gray:    "#9c9a96",
+  brown:   "#a07060",
+  orange:  "#c08040",
+  yellow:  "#b09040",
+  green:   "#5a9e7a",
+  blue:    "#5090b8",
+  purple:  "#8060a8",
+  pink:    "#c06090",
+  red:     "#c06060",
+};
+
+function tagStyle(color: string): string {
+  return `--tag-text:${notionColors[color] ?? notionColors.default}`;
+}
+---
+
+<Base title="タグ一覧">
+  <header class="mb-4">
+    <h1 class="tag-cloud-heading fs-2 fw-bold mb-2">タグ一覧</h1>
+    <p class="tag-cloud-count">{tags.length}件のタグ</p>
+  </header>
+
+  {tags.length > 0 ? (
+    <ul class="tag-cloud" aria-label="タグ一覧">
+      {tags.map((tag) => (
+        <li>
+          <a
+            class="tag-cloud-item"
+            href={`/tags/${tag.name}/`}
+            style={tagStyle(tag.color)}
+          >
+            {tag.name}
+            <span class="tag-cloud-item-count">({tag.count})</span>
+          </a>
+        </li>
+      ))}
+    </ul>
+  ) : (
+    <p>タグがまだありません。</p>
+  )}
+</Base>
+
+<style>
+  .tag-cloud-heading {
+    font-weight: bold;
+    margin-bottom: 0.25rem;
+  }
+  .tag-cloud-count {
+    color: var(--c-text-sub);
+  }
+  .tag-cloud {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem 1rem;
+    line-height: 1.8;
+  }
+  .tag-cloud-item {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4em;
+    color: inherit;
+    text-decoration: none;
+  }
+  .tag-cloud-item::before {
+    content: "";
+    display: inline-block;
+    width: 0.75em;
+    height: 0.75em;
+    background-color: var(--tag-text);
+    border-radius: 2px;
+    flex-shrink: 0;
+  }
+  .tag-cloud-item:hover {
+    text-decoration: underline;
+  }
+  .tag-cloud-item-count {
+    font-size: 0.85em;
+    color: var(--c-text-sub);
+  }
+</style>

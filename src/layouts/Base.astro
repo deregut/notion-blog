@@ -3,6 +3,7 @@ import "bootstrap/dist/css/bootstrap.min.css";
 import "bootstrap-icons/font/bootstrap-icons.min.css";
 import "@/styles/global.css";
 import SiteHeader from "@/components/SiteHeader.astro";
+import SiteFooter from "@/components/SiteFooter.astro";
 import { siteName, siteDescription, author, copyrightYear } from "@/site";
 
 interface Props {
@@ -12,9 +13,10 @@ interface Props {
   ogImage?: string;
   oEmbedUrl?: string;
   robots?: string;
+  showFooterNav?: boolean;
 }
 
-const { title, description = siteName, ogType = "website", ogImage, oEmbedUrl, robots } = Astro.props;
+const { title, description = siteName, ogType = "website", ogImage, oEmbedUrl, robots, showFooterNav = false } = Astro.props;
 const canonicalUrl = new URL(Astro.url.pathname, Astro.site).href;
 const ogTitle = title || siteName;
 const ogImageUrl = ogImage ? new URL(ogImage, Astro.site).href : undefined;
@@ -50,8 +52,6 @@ const ogImageUrl = ogImage ? new URL(ogImage, Astro.site).href : undefined;
       <slot />
     </main>
 
-    <footer class="text-center my-5 py-3 text-body-secondary small">
-      <div class="mb-0">&copy; {copyrightYear} {author}</div>
-    </footer>
+    <SiteFooter author={author} copyrightYear={copyrightYear} showNav={showFooterNav} />
   </body>
 </html>
