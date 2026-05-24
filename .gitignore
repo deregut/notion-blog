@@ -4,3 +4,4 @@ dist
 .astro
 public/ogp/
 public/notion-images
+.media-cache-dirty
