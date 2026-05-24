@@ -2,7 +2,6 @@
 import Base from "@/layouts/Base.astro";
 import NotionRenderer from "@/components/NotionRenderer.vue";
 import PostHeader from "@/components/PostHeader.astro";
-import PostNavigation from "@/components/PostNavigation.astro";
 import { getPublishedPostsWithBlocks, getPageById, extractTextFromBlocks, extractFirstImageUrl, resolveDisplayTitle } from "@/lib/notion";
 import { enrichBlocksWithOgp, resolveInternalLinks, collectBacklinks } from "@/lib/enrichBlocks";
 import type { BacklinkEntry } from "@/lib/enrichBlocks";
@@ -12,11 +11,9 @@ export async function getStaticPaths() {
   const postsWithBlocks = await getPublishedPostsWithBlocks();
   const posts = postsWithBlocks.map((p) => p.meta);
   const backlinksMap = collectBacklinks(postsWithBlocks);
-  return posts.map((post, index) => ({
+  return posts.map((post) => ({
     params: { id: post.id },
     props: {
-      prev: posts[index + 1] ?? null, // 古い方
-      next: posts[index - 1] ?? null, // 新しい方
       allPosts: posts,
       backlinks: backlinksMap.get(post.id) ?? [],
     },
@@ -24,9 +21,7 @@ export async function getStaticPaths() {
 }
 
 const { id } = Astro.params;
-const { prev, next, allPosts, backlinks } = Astro.props as {
-  prev: PostMeta | null;
-  next: PostMeta | null;
+const { allPosts, backlinks } = Astro.props as {
   allPosts: PostMeta[];
   backlinks: BacklinkEntry[];
 };
@@ -74,8 +69,6 @@ const ogImage = extractFirstImageUrl(blocks);
       </ul>
     </aside>
   )}
-
-  <PostNavigation prev={prev ?? undefined} next={next ?? undefined} />
 </Base>
 
 <style>
