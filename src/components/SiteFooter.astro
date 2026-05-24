@@ -1,0 +1,34 @@
+---
+interface Props {
+  author: string;
+  copyrightYear: string | number;
+  showNav?: boolean;
+}
+
+const { author, copyrightYear, showNav = false } = Astro.props;
+---
+
+<footer class="text-center my-5 py-3 text-body-secondary small">
+  {showNav && (
+    <nav class="site-footer-nav mb-3" aria-label="サイトナビゲーション">
+      <a href="/tags/">タグ一覧</a>
+      <a href="/rss.xml">RSS Feed</a>
+    </nav>
+  )}
+  <div class="mb-0">&copy; {copyrightYear} {author}</div>
+</footer>
+
+<style>
+  .site-footer-nav {
+    display: flex;
+    justify-content: center;
+    gap: 1.25rem;
+  }
+  .site-footer-nav a {
+    color: inherit;
+    text-decoration: none;
+  }
+  .site-footer-nav a:hover {
+    text-decoration: underline;
+  }
+</style>

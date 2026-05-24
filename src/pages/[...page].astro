@@ -74,7 +74,7 @@ const { page } = Astro.props;
 const paginationItems = buildPaginationItems(page.currentPage, page.lastPage);
 ---
 
-<Base title={page.currentPage === 1 ? "" : `Page ${page.currentPage}`}>
+<Base title={page.currentPage === 1 ? "" : `Page ${page.currentPage}`} showFooterNav>
   <section class="posts-list">
     {
       page.data.map((post) => {
