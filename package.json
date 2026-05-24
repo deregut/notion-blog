@@ -4,9 +4,9 @@
   "version": "1.0.0",
   "scripts": {
     "dev": "astro dev",
-    "prebuild": "node scripts/ogp-cache.mjs hydrate",
+    "prebuild": "node scripts/media-cache.mjs hydrate",
     "build": "astro build",
-    "postbuild": "node scripts/ogp-cache.mjs upload",
+    "postbuild": "node scripts/media-cache.mjs upload",
     "preview": "astro preview",
     "astro": "astro"
   },

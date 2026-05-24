@@ -1,7 +1,7 @@
 import * as cheerio from "cheerio";
 import { createHash } from "node:crypto";
-import { writeFile, readFile, mkdir, access } from "node:fs/promises";
-import { join } from "node:path";
+import { writeFile, readFile, mkdir, stat, appendFile } from "node:fs/promises";
+import { dirname, join } from "node:path";
 import sharp from "sharp";
 
 // ---------------------------------------------------------------------------
@@ -12,9 +12,9 @@ export interface OgpMeta {
   title: string | null;
   description: string | null;
   siteName: string | null;
-  /** ローカルパス (例: "/ogp/abc123.webp") */
+  /** 画像 URL (ローカル相対パス or CDN 絶対 URL、`?t=mtime` 付き) */
   imageUrl: string | null;
-  /** Favicon URL (外部リンク) */
+  /** Favicon URL (同上) */
   faviconUrl: string | null;
   /** 元の URL */
   url: string;
@@ -24,14 +24,10 @@ export interface OgpMeta {
 // Constants
 // ---------------------------------------------------------------------------
 
-const OGP_IMAGE_DIR = "public/ogp";
-const OGP_DIST_DIR = "dist/ogp";
-const OGP_IMAGE_PUBLIC_PATH = "/ogp";
+const PUBLIC_DIR = "public";
+const DIST_DIR = "dist";
 export const OGP_META_DIR = "public/ogp/meta";
-export const OGP_DIRTY_MARKER = "public/ogp/.dirty";
-const NOTION_IMAGE_DIR = "public/notion-images";
-const NOTION_IMAGE_DIST_DIR = "dist/notion-images";
-const NOTION_IMAGE_PUBLIC_PATH = "/notion-images";
+export const MEDIA_CACHE_DIRTY_LIST = ".media-cache-dirty";
 const FETCH_TIMEOUT_MS = 10_000;
 const MAX_HTML_SIZE = 2 * 1024 * 1024; // 2MB
 const MAX_IMAGE_SIZE = 5 * 1024 * 1024; // 5MB
@@ -143,58 +139,77 @@ function resolveFaviconUrl(
 }
 
 // ---------------------------------------------------------------------------
-// 共通: 画像ダウンロード + sharp 再エンコード + 保存
+// メディアキャッシュ
 // ---------------------------------------------------------------------------
+
+/** CDN モード判定 (本番ビルド + S3_PUBLIC_BASE_URL 設定) */
+function isCdnMode(): boolean {
+  return (
+    process.env.NODE_ENV === "production" &&
+    !!process.env.S3_PUBLIC_BASE_URL?.trim()
+  );
+}
+
+function cdnBaseUrl(): string {
+  return (process.env.S3_PUBLIC_BASE_URL ?? "").replace(/\/+$/, "");
+}
+
+/** `.media-cache-dirty` に objectKey を追記する。失敗は無視 */
+export async function recordMediaCacheEntry(objectKey: string): Promise<void> {
+  try {
+    await appendFile(MEDIA_CACHE_DIRTY_LIST, `${objectKey}\n`);
+  } catch {
+    // 記録失敗は致命的でないので無視
+  }
+}
 
 interface DownloadImageOptions {
   url: string;
-  publicDir: string;
-  distDir: string;
-  publicPath: string;
-  filename: string;
+  /** R2 オブジェクトキー兼 `public/` 相対パス (例: `ogp/abc.webp`, `notion-images/def.webp`) */
+  objectKey: string;
   transform: (input: sharp.Sharp) => sharp.Sharp;
-  /** 新規ダウンロード時に OGP キャッシュの .dirty マーカーを更新する */
-  markOgpDirty?: boolean;
 }
 
 /** dist/ へのコピーはベストエフォート (dev 時は不要、build 時のみ有効) */
-async function copyToDist(distDir: string, distPath: string, data: Buffer): Promise<void> {
+async function copyToDist(distPath: string, data: Buffer): Promise<void> {
   try {
-    await mkdir(distDir, { recursive: true });
+    await mkdir(dirname(distPath), { recursive: true });
     await writeFile(distPath, data);
   } catch {
     // dist 書き込み失敗は無視 (dev モード等)
   }
 }
 
-/** OGP キャッシュに新規エントリが書かれたことを示すマーカーを更新する */
-export async function touchOgpDirtyMarker(): Promise<void> {
+async function buildPublicUrl(
+  objectKey: string,
+  localPath: string,
+): Promise<string> {
+  const base = isCdnMode() ? `${cdnBaseUrl()}/${objectKey}` : `/${objectKey}`;
   try {
-    await mkdir(OGP_IMAGE_DIR, { recursive: true });
-    await writeFile(OGP_DIRTY_MARKER, "");
+    const s = await stat(localPath);
+    return `${base}?t=${Math.floor(s.mtimeMs)}`;
   } catch {
-    // マーカー書き込みの失敗は致命的でないので無視
+    return base;
   }
 }
 
 async function downloadAndSaveImage(
   opts: DownloadImageOptions,
 ): Promise<string | null> {
-  const localPath = join(opts.publicDir, opts.filename);
-  const distPath = join(opts.distDir, opts.filename);
-  const publicUrl = `${opts.publicPath}/${opts.filename}`;
+  const localPath = join(PUBLIC_DIR, opts.objectKey);
+  const distPath = join(DIST_DIR, opts.objectKey);
+  const cdn = isCdnMode();
 
   // キャッシュ: 既にダウンロード済みならスキップ
   try {
-    await access(localPath);
-    // dist にもコピー (ベストエフォート)
-    await copyToDist(opts.distDir, distPath, await readFile(localPath));
-    return publicUrl;
+    const cached = await readFile(localPath);
+    if (!cdn) await copyToDist(distPath, cached);
+    return await buildPublicUrl(opts.objectKey, localPath);
   } catch {
     // ファイルなし → ダウンロード続行
   }
 
-  await mkdir(opts.publicDir, { recursive: true });
+  await mkdir(dirname(localPath), { recursive: true });
 
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
@@ -220,9 +235,9 @@ async function downloadAndSaveImage(
   const output = await opts.transform(sharp(buffer)).toBuffer();
 
   await writeFile(localPath, output);
-  await copyToDist(opts.distDir, distPath, output);
-  if (opts.markOgpDirty) await touchOgpDirtyMarker();
-  return publicUrl;
+  if (!cdn) await copyToDist(distPath, output);
+  await recordMediaCacheEntry(opts.objectKey);
+  return await buildPublicUrl(opts.objectKey, localPath);
 }
 
 /**
@@ -253,14 +268,10 @@ export async function downloadOgpImage(
   try {
     return await downloadAndSaveImage({
       url: imageUrl,
-      publicDir: OGP_IMAGE_DIR,
-      distDir: OGP_DIST_DIR,
-      publicPath: OGP_IMAGE_PUBLIC_PATH,
-      filename: `${hashUrl(imageUrl)}.webp`,
+      objectKey: `ogp/${hashUrl(imageUrl)}.webp`,
       transform: (s) =>
         s.resize(1200, 630, { fit: "inside", withoutEnlargement: true })
           .webp({ quality: 80 }),
-      markOgpDirty: true,
     });
   } catch {
     return null;
@@ -278,14 +289,10 @@ export async function downloadFavicon(
   try {
     return await downloadAndSaveImage({
       url: faviconUrl,
-      publicDir: OGP_IMAGE_DIR,
-      distDir: OGP_DIST_DIR,
-      publicPath: OGP_IMAGE_PUBLIC_PATH,
-      filename: `favicon-${hashUrl(faviconUrl)}.webp`,
+      objectKey: `ogp/favicon-${hashUrl(faviconUrl)}.webp`,
       transform: (s) =>
         s.resize(32, 32, { fit: "cover" })
           .webp({ quality: 80 }),
-      markOgpDirty: true,
     });
   } catch {
     return null;
@@ -347,10 +354,7 @@ export async function downloadNotionImage(
   try {
     return await downloadAndSaveImage({
       url: imageUrl,
-      publicDir: NOTION_IMAGE_DIR,
-      distDir: NOTION_IMAGE_DIST_DIR,
-      publicPath: NOTION_IMAGE_PUBLIC_PATH,
-      filename: `${hashUrl(imageUrl)}.webp`,
+      objectKey: `notion-images/${hashUrl(imageUrl)}.webp`,
       transform: (s) =>
         s.resize(1920, 1920, { fit: "inside", withoutEnlargement: true })
           .webp({ quality: 85 }),
@@ -359,3 +363,4 @@ export async function downloadNotionImage(
     return null;
   }
 }
+
