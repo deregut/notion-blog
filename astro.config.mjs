@@ -14,19 +14,19 @@ export default defineConfig({
         context: "server",
         access: "public",
         optional: true,
-        default: "note",
+        default: "Notion Blog",
       }),
       SITE_DESCRIPTION: envField.string({
         context: "server",
         access: "public",
         optional: true,
-        default: "Notionをブログのように公開するためのサイト",
+        default: "Notion數據庫Blog",
       }),
       SITE_AUTHOR: envField.string({
         context: "server",
         access: "public",
         optional: true,
-        default: "author",
+        default: "Derek Gu",
       }),
       SITE_COPYRIGHT_YEAR: envField.string({
         context: "server",
